@@ -1,0 +1,51 @@
+---
+import { Image } from 'astro:assets';
+import Base from '../layouts/Base.astro';
+import { site } from '../lib/site';
+import ahmedPhoto from '../assets/ahmed.jpg';
+
+const sameAs = [site.github, site.linkedin].filter((url) => url && url !== '#');
+const personLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  name: site.name,
+  url: site.url,
+  jobTitle: 'Software Engineer',
+  email: site.email,
+  sameAs,
+};
+---
+
+<Base current="/">
+  <Fragment slot="head">
+    <script type="application/ld+json" set:html={JSON.stringify(personLd)} />
+  </Fragment>
+
+  <div class="top anim">
+    <Image
+      class="avatar"
+      src={ahmedPhoto}
+      alt={site.name}
+      width={224}
+      height={224}
+      loading="eager"
+      fetchpriority="high"
+    />
+    <div>
+      <h1>{site.name}</h1>
+      <div class="tag">Software Engineer</div>
+    </div>
+  </div>
+
+  <div class="bio anim">
+    <p>
+      I'm a full-stack software engineer in Cairo. I enjoy building reliable &
+      scalable systems and working across the whole stack owning things
+      end-to-end.
+    </p>
+    <p>
+      In a previous life I studied Electrical Engineering and worked in ML &
+      Data Science.
+    </p>
+  </div>
+</Base>

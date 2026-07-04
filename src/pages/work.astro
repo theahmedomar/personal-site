@@ -1,0 +1,254 @@
+---
+import Base from '../layouts/Base.astro';
+import { site } from '../lib/site';
+---
+
+<Base title="Work" current="/work">
+  <div class="anim">
+    <h1 class="page-h">Work</h1>
+  </div>
+
+  <div class="anim">
+    <h2>Experience</h2>
+    <div class="row">
+      <span class="yr">Oct 2025 – Now</span>
+      <div class="body">
+        <div class="title"><a href={site.arsel}>Arsel</a></div>
+        <ul class="pts">
+          <li>
+            Architected and built a multi-tenant marketing-automation platform
+            end-to-end across frontend, backend, and infrastructure
+          </li>
+          <li>
+            Built the analytics pipeline powering live engagement dashboards and
+            dynamic segments, sustaining thousands of events/second at peak.
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">Mar – Oct 2025</span>
+      <div class="body">
+        <div class="title"><a href="https://rdi-eg.ai">RDI</a></div>
+        <ul class="pts">
+          <li>
+            Shipped a self-service GCP VM platform with custom RBAC and a full
+            audit log that cut cloud spend 40%.
+          </li>
+          <li>
+            Migrated an OCR service from Flask to FastAPI with request batching,
+            improving processing speed.
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">Dec 2024 – Mar 2025</span>
+      <div class="body">
+        <div class="title"><a href="https://digisay.com">DigiSay</a></div>
+        <ul class="pts">
+          <li>
+            Owned a platform automating music distribution to Spotify, Apple
+            Music, Anghami &amp; YouTube, replacing a manual, bus-factor-heavy
+            process.
+          </li>
+          <li>
+            Built a Scrapy + Selenium crawler for piracy detection, pulling 100+
+            infringing URLs a day.
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">Jan 2023 – Mar 2024</span>
+      <div class="body">
+        <div class="title">Egyptian Armed Forces</div>
+        <p class="desc"><span class="d">Mandatory national service.</span></p>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">Sep 2022 – Jan 2023</span>
+      <div class="body">
+        <div class="title"><a href="https://github.com/ivy-llc">Unify</a></div>
+        <ul class="pts">
+          <li>
+            Built cross-framework compatibility layers in <a
+              href="https://github.com/ivy-llc/ivy">Ivy</a
+            > so PyTorch code runs unmodified on a JAX backend, covering core linear-algebra
+            and vision ops.
+          </li>
+          <li>
+            Consolidated brittle internal automations into one CI/CD-deployed
+            repo on GCP Cloud Run.
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">2020</span>
+      <div class="body">
+        <div class="title">Freelance</div>
+        <ul class="pts">
+          <li>
+            Built a PyQt desktop app that extracts fields from Egyptian national
+            ID cards.
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">2019</span>
+      <div class="body">
+        <div class="title">Freelance</div>
+        <ul class="pts">
+          <li>
+            Generated a 200K-image synthetic dataset of Arabic and English scene
+            text with <a
+              href="https://github.com/Belval/TextRecognitionDataGenerator"
+              >TRDG</a
+            > and <a href="https://github.com/ankush-me/SynthText">SynthText</a
+            >, patching both tools' source to fix Arabic glyph rendering and
+            expand font and background diversity.
+          </li>
+          <li>
+            Benchmarked state-of-the-art text-detection models on synthetic and
+            real-world data, writing converters to reformat labels for each
+            architecture; the work fed an Arabic scene-text detection research
+            paper.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="anim">
+    <h2>Projects</h2>
+    <div class="row">
+      <span class="yr">2025</span>
+      <div class="body">
+        <div class="title">
+          <a href="https://github.com/theahmedomar/gopherkv">GopherKV</a>
+        </div>
+        <p class="desc">
+          A distributed key-value store with the Raft consensus algorithm
+          implemented from scratch.
+        </p>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">2022</span>
+      <div class="body">
+        <div class="title">
+          <a href="https://github.com/theahmedomar/CircuitGa">CircuitGA</a>
+        </div>
+        <p class="desc">
+          My bachelor thesis: automating analog transistor sizing with genetic
+          algorithms.
+        </p>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">2022</span>
+      <div class="body">
+        <div class="title">
+          <a href="https://github.com/theahmedomar/movielens-etl"
+            >MovieLens ETL</a
+          >
+        </div>
+        <p class="desc">
+          A pipeline ingesting the 25M-rating dataset into BigQuery, from data
+          lake to dashboards.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="anim">
+    <h2>Open source</h2>
+    <div class="row">
+      <span class="yr">2021</span>
+      <div class="body">
+        <div class="title">
+          <a href="https://github.com/openai/gym/pull/2394">OpenAI/Gym</a>
+        </div>
+        <p class="desc">
+          Added a wrapper enforcing correct environment initialization and reset
+          order, merged into main and enabled by default across every Gym
+          environment.
+        </p>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">2021</span>
+      <div class="body">
+        <div class="title">
+          <a href="https://github.com/pytorch/ignite/pull/1656/"
+            >PyTorch/Ignite</a
+          >
+        </div>
+        <p class="desc">
+          Contributed an example showing distributed, multi-GPU fine-tuning of
+          Hugging Face transformers on a custom text-classification dataset.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="anim">
+    <h2>Awards</h2>
+    <div class="row">
+      <span class="yr">🥇 2022</span>
+      <div class="body">
+        <div class="title">
+          <a href="https://zindi.africa/zc/QgHe5M"
+            >Microsoft's Rice Disease Classification Challenge</a
+          >
+        </div>
+        <p class="desc">
+          Fine-tuned a vision transformer for early detection of rice blast
+          disease from crop images.
+        </p>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">🥇 2020</span>
+      <div class="body">
+        <div class="title">
+          <a href="https://zindi.africa/zc/okHZ2a">UmojaHack Egypt Hackathon</a>
+        </div>
+        <p class="desc">
+          Trained an XGBoost model to reconstruct missing GPS readings in a
+          running-tracker app.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="anim">
+    <h2>Toolkit</h2>
+    <div class="row">
+      <span class="yr">Languages</span>
+      <div class="body">
+        <span class="d">Python · Go · TypeScript · SQL</span>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">Frameworks</span>
+      <div class="body">
+        <span class="d">NestJS · Django · Angular · React · FastAPI</span>
+      </div>
+    </div>
+    <div class="row">
+      <span class="yr">Infrastructure</span>
+      <div class="body">
+        <span class="d"
+          >Docker · AWS · GCP · PostgreSQL · Redis · Terraform</span
+        >
+      </div>
+    </div>
+  </div>
+
+  <Fragment slot="footer">
+    <a href="/">← Home</a>
+  </Fragment>
+</Base>
