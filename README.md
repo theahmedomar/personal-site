@@ -1,7 +1,3 @@
-# Personal site
-
-Source for [theahmedomar.com](https://theahmedomar.com) — my portfolio.
-
 Built with [Astro 5](https://astro.build): static HTML, no client-side framework (just a small inline theme-toggle script). One global stylesheet, no CSS framework.
 
 ## Develop
