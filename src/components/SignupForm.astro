@@ -1,0 +1,154 @@
+<div id="arsel-form-AZ9X5Iez" class="arsel-form"></div>
+<script is:inline>
+  (function () {
+    const root = document.getElementById('arsel-form-AZ9X5Iez');
+    fetch('https://api.arsel.sa/f/AZ9X5Iez/config')
+      .then(function (r) {
+        if (!r.ok) throw new Error('config unavailable');
+        return r.json();
+      })
+      .then(function (cfg) {
+        if (!cfg || cfg.status !== 'active') {
+          throw new Error('form inactive');
+        }
+        const form = document.createElement('form');
+        if (cfg.name) {
+          const h = document.createElement('h2');
+          h.className = 'arsel-title';
+          h.textContent = cfg.name;
+          form.appendChild(h);
+        }
+        if (cfg.description) {
+          const p = document.createElement('p');
+          p.className = 'arsel-description';
+          p.textContent = cfg.description;
+          form.appendChild(p);
+        }
+        (cfg.fields || []).forEach(function (f) {
+          const key = f.fieldKey || f.name;
+          if (!key) return;
+          if (f.hidden) {
+            const hid = document.createElement('input');
+            hid.type = 'hidden';
+            hid.name = key;
+            hid.value = f.defaultValue || '';
+            form.appendChild(hid);
+            return;
+          }
+          const wrap = document.createElement('div');
+          wrap.className = 'arsel-field';
+          if (f.type !== 'checkbox') {
+            const lbl = document.createElement('label');
+            lbl.className = 'arsel-label';
+            lbl.textContent = f.label || key;
+            wrap.appendChild(lbl);
+          }
+          let input;
+          if (f.type === 'dropdown') {
+            input = document.createElement('select');
+            input.className = 'arsel-select';
+            (f.options || []).forEach(function (o) {
+              const op = document.createElement('option');
+              op.value = o.value;
+              op.textContent = o.label;
+              input.appendChild(op);
+            });
+          } else if (f.type === 'checkbox') {
+            input = document.createElement('input');
+            input.type = 'checkbox';
+            input.className = 'arsel-checkbox';
+            const cl = document.createElement('label');
+            cl.className = 'arsel-label';
+            cl.appendChild(input);
+            cl.appendChild(document.createTextNode(' ' + (f.label || key)));
+            wrap.appendChild(cl);
+          } else if (f.type === 'radio') {
+            const grp = document.createElement('div');
+            grp.className = 'arsel-radio-group';
+            (f.options || []).forEach(function (o) {
+              const ol = document.createElement('label');
+              ol.className = 'arsel-radio-option';
+              const ri = document.createElement('input');
+              ri.type = 'radio';
+              ri.name = key;
+              ri.value = o.value;
+              if (f.required) ri.required = true;
+              ol.appendChild(ri);
+              ol.appendChild(document.createTextNode(' ' + o.label));
+              grp.appendChild(ol);
+            });
+            wrap.appendChild(grp);
+            input = {};
+          } else {
+            input = document.createElement('input');
+            input.type = f.type || 'text';
+            input.className = 'arsel-input';
+            if (f.placeholder) input.placeholder = f.placeholder;
+          }
+          if (input.tagName) {
+            input.name = key;
+            if (f.required) input.required = true;
+            if (f.type !== 'checkbox') wrap.appendChild(input);
+          }
+          form.appendChild(wrap);
+        });
+        const btn = document.createElement('button');
+        btn.type = 'submit';
+        btn.className = 'arsel-submit';
+        btn.textContent = (cfg.styles && cfg.styles.buttonText) || 'Subscribe';
+        form.appendChild(btn);
+        const msg = document.createElement('div');
+        msg.className = 'arsel-message';
+        form.appendChild(msg);
+        root.appendChild(form);
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          const data = {},
+            props = {};
+          new FormData(form).forEach(function (v, k) {
+            if (
+              ['email', 'firstName', 'lastName', 'phoneNumber'].indexOf(k) >= 0
+            )
+              data[k] = v;
+            else props[k] = v;
+          });
+          if (Object.keys(props).length) data.properties = props;
+          btn.disabled = true;
+          fetch('https://api.arsel.sa/f/AZ9X5Iez/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          })
+            .then(function (r) {
+              if (r.ok) {
+                msg.textContent = 'Successfully subscribed!';
+                msg.className = 'arsel-message arsel-success';
+                form.reset();
+              } else {
+                return r
+                  .json()
+                  .catch(function () {
+                    return {};
+                  })
+                  .then(function (d) {
+                    throw new Error(
+                      d.message || 'Something went wrong — please try again.',
+                    );
+                  });
+              }
+            })
+            .catch(function (err) {
+              msg.textContent = err.message;
+              msg.className = 'arsel-message arsel-error';
+            })
+            .finally(function () {
+              btn.disabled = false;
+            });
+        });
+      })
+      .catch(function () {
+        // config failed or form inactive — remove the empty container
+        root.remove();
+      });
+  })();
+</script>

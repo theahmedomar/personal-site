@@ -1,0 +1,154 @@
+---
+// D6 — what to reach for, mapped on event volume vs. how arbitrary the queries are.
+const quads = [
+  {
+    px: 76,
+    py: 52,
+    tool: 'rollups + counters',
+    note: 'pre-chosen dimensions',
+    rec: true,
+  },
+  {
+    px: 347,
+    py: 52,
+    tool: 'columnar / OLAP',
+    note: 'any slice, at scale',
+    rec: true,
+  },
+  {
+    px: 76,
+    py: 158,
+    tool: 'raw query + index',
+    note: 'keep it simple',
+    rec: false,
+  },
+  {
+    px: 347,
+    py: 158,
+    tool: 'raw scan / replica',
+    note: 'flexible while small',
+    rec: false,
+  },
+].map((q, i) => ({ ...q, i, cx: q.px + 123.5, cy: q.py + 41 }));
+const PW = 247;
+const PH = 82;
+---
+
+<svg
+  class="diagram dc"
+  viewBox="0 0 640 292"
+  role="img"
+  aria-label="A 2 by 2 map. Vertical axis is event volume, horizontal axis is query flexibility. High volume with fixed queries favors rollups and counters; high volume with arbitrary filters favors a columnar or OLAP store; low volume favors querying raw data directly."
+>
+  <defs>
+    <marker
+      id="dc-arrow"
+      viewBox="0 0 8 8"
+      refX="6"
+      refY="4"
+      markerWidth="7"
+      markerHeight="7"
+      orient="auto"
+    >
+      <path d="M0 0 L8 4 L0 8 Z" fill="var(--faint)"></path>
+    </marker>
+  </defs>
+
+  {
+    quads.map((q) => (
+      <g class="dc-cell" style={`animation-delay:${q.i * 0.08}s`}>
+        <rect
+          class={q.rec ? 'panel panel-rec' : 'panel'}
+          x={q.px}
+          y={q.py}
+          width={PW}
+          height={PH}
+          rx="9"
+        />
+        <text
+          x={q.cx}
+          y={q.cy - 4}
+          text-anchor="middle"
+          class={`${q.rec ? 't-ok' : 't-ink'} t-strong`}
+        >
+          {q.tool}
+        </text>
+        <text
+          x={q.cx}
+          y={q.cy + 15}
+          text-anchor="middle"
+          class="t-faint t-note"
+        >
+          {q.note}
+        </text>
+      </g>
+    ))
+  }
+
+  <line
+    x1="64"
+    y1="250"
+    x2="64"
+    y2="40"
+    class="axis"
+    marker-end="url(#dc-arrow)"></line>
+  <line
+    x1="64"
+    y1="250"
+    x2="606"
+    y2="250"
+    class="axis"
+    marker-end="url(#dc-arrow)"></line>
+
+  <text x="56" y="52" text-anchor="end" class="t-faint t-note">high</text>
+  <text x="56" y="248" text-anchor="end" class="t-faint t-note">low</text>
+  <text
+    x="22"
+    y="150"
+    text-anchor="middle"
+    class="t-ink t-label"
+    transform="rotate(-90 22 150)">event volume</text
+  >
+
+  <text x="70" y="270" class="t-faint t-note">fixed</text>
+  <text x="600" y="270" text-anchor="end" class="t-faint t-note">arbitrary</text
+  >
+  <text x="335" y="288" text-anchor="middle" class="t-ink t-label"
+    >query flexibility</text
+  >
+</svg>
+
+<style>
+  .diagram.dc .axis {
+    fill: none;
+    stroke: var(--faint);
+    stroke-width: 1.5;
+  }
+  .diagram.dc .panel {
+    fill: var(--code-bg);
+    stroke: var(--rule);
+    stroke-width: 1.5;
+  }
+  .diagram.dc .panel-rec {
+    fill: color-mix(in srgb, var(--accent) 9%, var(--code-bg));
+    stroke: color-mix(in srgb, var(--accent) 45%, var(--rule));
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .diagram.dc .dc-cell {
+      opacity: 0;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: dc-in 0.5s ease-out forwards;
+    }
+  }
+  @keyframes dc-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+</style>

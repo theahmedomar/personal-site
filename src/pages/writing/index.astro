@@ -1,0 +1,42 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+import { readingTime } from '../../lib/reading-time';
+
+const articles = (
+  await getCollection('articles', ({ data }) =>
+    import.meta.env.PROD ? !data.draft : true,
+  )
+).sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const fmt = (d) =>
+  new Date(d).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+---
+
+<Base title="Writing" current="/writing">
+  <h1 class="sr-only">Writing</h1>
+
+  {
+    articles.length > 0 ? (
+      <section class="posts flush anim">
+        {articles.map((a) => (
+          <article class="post">
+            <h3 class="post-title">
+              <a href={`/writing/${a.id}/`}>{a.data.title}</a>
+            </h3>
+            <p class="post-meta">
+              {fmt(a.data.pubDate)} · {readingTime(a.body ?? '')}
+            </p>
+            <p class="post-desc">{a.data.description}</p>
+          </article>
+        ))}
+      </section>
+    ) : (
+      <p class="page-sub anim">Nothing published yet — soon.</p>
+    )
+  }
+</Base>

@@ -1,0 +1,54 @@
+---
+import x from '../icons/x.svg';
+import linkedin from '../icons/linkedin.svg';
+import hackernews from '../icons/hackernews.svg';
+import reddit from '../icons/reddit.svg';
+
+const { url, title } = Astro.props;
+const u = encodeURIComponent(url);
+const t = encodeURIComponent(title);
+const links = [
+  {
+    label: 'X',
+    Icon: x,
+    href: `https://twitter.com/intent/tweet?text=${t}&url=${u}`,
+  },
+  {
+    label: 'LinkedIn',
+    Icon: linkedin,
+    href: `https://www.linkedin.com/sharing/share-offsite/?url=${u}`,
+  },
+  {
+    label: 'Hacker News',
+    Icon: hackernews,
+    href: `https://news.ycombinator.com/submitlink?u=${u}&t=${t}`,
+  },
+  {
+    label: 'Reddit',
+    Icon: reddit,
+    href: `https://www.reddit.com/submit?url=${u}&title=${t}`,
+  },
+];
+---
+
+<div class="share">
+  <span class="share-label">Share this post on</span>
+  <ul class="share-links">
+    {
+      links.map(({ label, Icon, href }) => (
+        <li>
+          <a
+            class="icon-link"
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Share on ${label}`}
+            title={label}
+          >
+            <Icon />
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</div>

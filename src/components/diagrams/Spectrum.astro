@@ -1,0 +1,118 @@
+---
+// D2 — the seven approaches laid out on one axis by how much machinery you build
+// and operate, from least effort (query raw data) to most (a streaming platform).
+// Labels alternate above and below the line so each has room to breathe.
+const start = 72;
+const end = 560;
+const stops = [
+  { name: 'raw query', note: 'scan every read', side: 'up' },
+  { name: 'read replica', note: 'offload reads', side: 'down' },
+  { name: 'materialized view', note: 'scheduled refresh', side: 'up' },
+  { name: 'rollup table', note: 'precompute on ingest', side: 'down' },
+  { name: 'write-time counter', note: 'store the answer', side: 'up' },
+  { name: 'columnar / OLAP', note: 'ad-hoc at scale', side: 'down' },
+  { name: 'stream processing', note: 'continuous compute', side: 'up' },
+].map((s, i) => ({
+  ...s,
+  i,
+  x: Math.round(start + (i * (end - start)) / 6),
+  r: (3.5 + (i / 6) * 2).toFixed(1),
+}));
+---
+
+<svg
+  class="diagram"
+  viewBox="0 0 640 210"
+  role="img"
+  aria-label="The seven approaches on one axis, from least effort (query raw data on every read) to most effort (a dedicated streaming platform): raw query, read replica, materialized view, rollup table, write-time counter, columnar or OLAP store, and stream processing."
+>
+  <defs>
+    <marker
+      id="sp-arrow"
+      viewBox="0 0 8 8"
+      refX="6"
+      refY="4"
+      markerWidth="7"
+      markerHeight="7"
+      orient="auto"
+    >
+      <path d="M0 0 L8 4 L0 8 Z" fill="var(--accent)"></path>
+    </marker>
+    <linearGradient id="sp-bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="var(--faint)"></stop>
+      <stop offset="1" stop-color="var(--accent)"></stop>
+    </linearGradient>
+  </defs>
+
+  <text x="8" y="20" class="t-faint t-note">least effort</text>
+  <text x="632" y="20" text-anchor="end" class="t-faint t-note"
+    >most effort</text
+  >
+
+  <line
+    x1="56"
+    y1="125"
+    x2="612"
+    y2="125"
+    class="sp-line"
+    marker-end="url(#sp-arrow)"></line>
+
+  {
+    stops.map((s) => (
+      <g class="sp-stop" style={`animation-delay:${s.i * 0.08}s`}>
+        <line
+          x1={s.x}
+          y1={s.side === 'up' ? 100 : 131}
+          x2={s.x}
+          y2={s.side === 'up' ? 119 : 150}
+          class="conn"
+        />
+        <circle cx={s.x} cy="125" r={s.r} class="sp-dot" />
+        <text
+          x={s.x}
+          y={s.side === 'up' ? 80 : 166}
+          text-anchor="middle"
+          class="t-head"
+        >
+          {s.name}
+        </text>
+        <text
+          x={s.x}
+          y={s.side === 'up' ? 94 : 180}
+          text-anchor="middle"
+          class="t-faint t-note"
+        >
+          {s.note}
+        </text>
+      </g>
+    ))
+  }
+</svg>
+
+<style>
+  .diagram .sp-line {
+    stroke: url(#sp-bar);
+    stroke-width: 2;
+  }
+  .diagram .sp-dot {
+    fill: var(--code-bg);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .diagram .sp-stop {
+      opacity: 0;
+      animation: sp-in 0.45s ease-out forwards;
+    }
+  }
+  @keyframes sp-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>

@@ -1,7 +1,9 @@
 ---
 import { Image } from 'astro:assets';
+import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
 import { site } from '../lib/site';
+import { readingTime } from '../lib/reading-time';
 import ahmedPhoto from '../assets/ahmed.jpg';
 
 const sameAs = [site.github, site.linkedin].filter((url) => url && url !== '#');
@@ -14,6 +16,21 @@ const personLd = {
   email: site.email,
   sameAs,
 };
+
+const posts = (
+  await getCollection('articles', ({ data }) =>
+    import.meta.env.PROD ? !data.draft : true,
+  )
+)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 5);
+
+const fmt = (d) =>
+  new Date(d).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 ---
 
 <Base current="/">
@@ -40,12 +57,29 @@ const personLd = {
   <div class="bio anim">
     <p>
       I'm a full-stack software engineer in Cairo. I enjoy building reliable &
-      scalable systems and working across the whole stack owning things
-      end-to-end.
+      scalable systems.
     </p>
     <p>
       In a previous life I studied Electrical Engineering and worked in ML &
       Data Science.
     </p>
   </div>
+
+  {
+    posts.length > 0 && (
+      <section class="posts anim">
+        {posts.map((a) => (
+          <article class="post">
+            <h3 class="post-title">
+              <a href={`/writing/${a.id}/`}>{a.data.title}</a>
+            </h3>
+            <p class="post-meta">
+              {fmt(a.data.pubDate)} · {readingTime(a.body ?? '')}
+            </p>
+            <p class="post-desc">{a.data.description}</p>
+          </article>
+        ))}
+      </section>
+    )
+  }
 </Base>

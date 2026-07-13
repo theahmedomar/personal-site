@@ -1,0 +1,168 @@
+---
+// D5 — an out-of-order event arrives now, but its timestamp belongs to an already-closed bucket.
+const w = 130;
+const buckets = [
+  { x: 8, label: '09:00', open: false, target: true },
+  { x: 150, label: '09:01', open: false, target: false },
+  { x: 292, label: '09:02', open: false, target: false },
+  { x: 434, label: '09:03', open: true, target: false },
+];
+const path = 'M489 54 C 360 20, 190 20, 74 106';
+---
+
+<svg
+  class="diagram le"
+  viewBox="0 0 640 196"
+  role="img"
+  aria-label="Buckets 09:00 through 09:02 are closed; 09:03 is open and is 'now'. An event arrives now but carries timestamp 09:00, so it is routed back to the already-closed 09:00 bucket, forcing a recompute."
+>
+  <defs>
+    <marker
+      id="le-arrow"
+      viewBox="0 0 8 8"
+      refX="6"
+      refY="4"
+      markerWidth="7"
+      markerHeight="7"
+      orient="auto"
+    >
+      <path d="M0 0 L8 4 L0 8 Z" fill="var(--fail)"></path>
+    </marker>
+  </defs>
+
+  {
+    buckets.map((b) => (
+      <>
+        <rect
+          class={
+            b.open ? 'box open' : b.target ? 'box-fill target' : 'box-fill'
+          }
+          x={b.x}
+          y="112"
+          width={w}
+          height="52"
+          rx="8"
+        />
+        {b.open && <circle cx={b.x + w - 18} cy="126" r="3.5" class="le-now" />}
+        <text x={b.x + w / 2} y="136" text-anchor="middle" class="t-ink">
+          {b.label}
+        </text>
+        <text
+          x={b.x + w / 2}
+          y="154"
+          text-anchor="middle"
+          class={`${b.open ? 't-ok' : 't-faint'} t-note`}
+        >
+          {b.open ? 'open · now' : 'closed'}
+        </text>
+      </>
+    ))
+  }
+  <rect class="le-recompute" x="8" y="112" width={w} height="52" rx="8"></rect>
+
+  <text x="499" y="34" text-anchor="middle" class="t-fail t-label"
+    >event arrives now · ts = 09:00</text
+  >
+  <rect
+    class="ev-fail"
+    x="493"
+    y="46"
+    width="12"
+    height="12"
+    rx="1"
+    transform="rotate(45 499 52)"></rect>
+
+  <path class="late" d={path} marker-end="url(#le-arrow)"></path>
+  <rect class="le-travel" width="12" height="12" rx="1"></rect>
+
+  <text x="73" y="186" text-anchor="middle" class="t-fail t-note"
+    >recompute</text
+  >
+</svg>
+
+<style>
+  .diagram.le .open {
+    stroke: var(--accent);
+    fill: color-mix(in srgb, var(--accent) 8%, var(--code-bg));
+  }
+  .diagram.le .target {
+    stroke: var(--fail);
+    fill: color-mix(in srgb, var(--fail) 7%, var(--code-bg));
+  }
+  .diagram.le .le-now {
+    fill: var(--accent);
+  }
+  .diagram.le .late {
+    fill: none;
+    stroke: var(--fail);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+  }
+  .diagram.le .le-recompute {
+    fill: var(--fail);
+    opacity: 0;
+  }
+  .diagram.le .le-travel {
+    fill: var(--fail);
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .diagram.le .le-now {
+      animation: le-pulse 1.8s ease-in-out infinite;
+    }
+    .diagram.le .le-travel {
+      offset-path: path('M489 54 C 360 20, 190 20, 74 106');
+      offset-rotate: 45deg;
+      offset-anchor: center;
+      animation: le-travel 3.4s cubic-bezier(0.5, 0, 0.4, 1) infinite;
+    }
+    .diagram.le .le-recompute {
+      animation: le-flash 3.4s ease-in-out infinite;
+    }
+  }
+  @keyframes le-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+  @keyframes le-travel {
+    0% {
+      offset-distance: 0%;
+      opacity: 0;
+    }
+    8% {
+      opacity: 1;
+    }
+    72% {
+      offset-distance: 100%;
+      opacity: 1;
+    }
+    80% {
+      offset-distance: 100%;
+      opacity: 0;
+    }
+    100% {
+      offset-distance: 100%;
+      opacity: 0;
+    }
+  }
+  @keyframes le-flash {
+    0%,
+    68% {
+      opacity: 0;
+    }
+    76% {
+      opacity: 0.16;
+    }
+    92% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+</style>

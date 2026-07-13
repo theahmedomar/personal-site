@@ -1,0 +1,104 @@
+---
+// D4 — unique counts are not additive: the two buckets overlap, so summing double-counts it.
+// Both circles share one accent tint; where they overlap the alpha stacks and darkens —
+// that darker lens is exactly the region counted twice.
+const A = { cx: 250, cy: 138, r: 104 };
+const B = { cx: 390, cy: 138, r: 104 };
+const chips = [
+  { x: 190, y: 138, label: 'u1', hl: false }, // A only
+  { x: 320, y: 112, label: 'u2', hl: true }, // overlap
+  { x: 320, y: 164, label: 'u3', hl: true }, // overlap
+  { x: 450, y: 138, label: 'u4', hl: false }, // B only
+];
+---
+
+<svg
+  class="diagram uniq"
+  viewBox="0 0 640 300"
+  role="img"
+  aria-label="Bucket 09:00 holds users u1, u2, u3; bucket 09:01 holds u2, u3, u4. The two sets overlap on u2 and u3. Adding the per-bucket counts gives 3 plus 3 equals 6, but there are only 4 distinct users because u2 and u3 appear in both buckets."
+>
+  <text x={A.cx} y="26" text-anchor="middle" class="t-head">09:00</text>
+  <text x={B.cx} y="26" text-anchor="middle" class="t-head">09:01</text>
+
+  <circle class="venn" cx={A.cx} cy={A.cy} r={A.r}></circle>
+  <circle class="venn" cx={B.cx} cy={B.cy} r={B.r}></circle>
+
+  {
+    chips.map((ch) => (
+      <>
+        <rect
+          class={ch.hl ? 'chip chip-hl' : 'chip'}
+          x={ch.x - 20}
+          y={ch.y - 11}
+          width="40"
+          height="22"
+          rx="11"
+        />
+        <text
+          x={ch.x}
+          y={ch.y + 4}
+          text-anchor="middle"
+          class={`${ch.hl ? 't-ok' : 't-faint'} t-label`}
+        >
+          {ch.label}
+        </text>
+      </>
+    ))
+  }
+
+  <text x="320" y="216" text-anchor="middle" class="t-fail t-note"
+    >counted twice</text
+  >
+  <text x="188" y="200" text-anchor="middle" class="t-faint t-note"
+    >3 unique</text
+  >
+  <text x="452" y="200" text-anchor="middle" class="t-faint t-note"
+    >3 unique</text
+  >
+
+  <rect class="box-fill" x="8" y="248" width="624" height="44" rx="10"></rect>
+  <text x="320" y="275" text-anchor="middle" class="t-lead">
+    3 + 3 = <tspan class="t-fail t-strong">6</tspan> counted, but only
+    <tspan class="t-ok t-strong">4</tspan> distinct
+  </text>
+</svg>
+
+<style>
+  .diagram.uniq .venn {
+    fill: color-mix(in srgb, var(--accent) 15%, transparent);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  .diagram.uniq .chip {
+    fill: var(--bg);
+    stroke: var(--rule);
+    stroke-width: 1;
+  }
+  .diagram.uniq .chip-hl {
+    fill: var(--bg);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .diagram.uniq .venn {
+      opacity: 0;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: uniq-in 0.6s ease-out forwards;
+    }
+    .diagram.uniq .venn:nth-of-type(2) {
+      animation-delay: 0.18s;
+    }
+  }
+  @keyframes uniq-in {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+</style>

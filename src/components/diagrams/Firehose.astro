@@ -1,0 +1,205 @@
+---
+// D1 — cost grows with the pile. The same COUNT(*), re-run as the append-only log
+// grows: the scan spans more rows and slows (green → red). All three sweeps run at
+// the same px/s on one shared cycle, so scan time is visibly proportional to size.
+const rows = [
+  { label: '10K rows', w: 70, tone: 'ok' },
+  { label: '1M rows', w: 214, tone: 'mid' },
+  { label: '100M rows', w: 440, tone: 'fail' },
+];
+const cy = [56, 104, 152];
+const barX = 96;
+const sweepW = 30;
+function ticks(w: number) {
+  const out = [];
+  for (let x = barX + 10; x < barX + w - 6; x += 9) out.push(x);
+  return out;
+}
+---
+
+<svg
+  class="diagram fh"
+  viewBox="0 0 640 196"
+  role="img"
+  aria-label="The same COUNT(*) query re-run against an append-only log as it grows, shown at ten thousand, one million, and a hundred million rows. The query never changes; the bar it must scan grows longer and shifts from green to red at each larger size. A highlight sweeps each bar at the same speed, so the ten-thousand-row scan finishes almost instantly while the hundred-million-row scan is still running. Read cost grows with the size of the log."
+>
+  <defs>
+    {
+      rows.map((r, i) => (
+        <clipPath id={`fh-clip${i}`}>
+          <rect x={barX} y={cy[i] - 13} width={r.w} height="26" rx="5" />
+        </clipPath>
+      ))
+    }
+  </defs>
+
+  {
+    rows.map((r, i) => (
+      <g>
+        <text
+          x={barX - 12}
+          y={cy[i] + 4}
+          text-anchor="end"
+          class="t-faint t-label"
+        >
+          {r.label}
+        </text>
+
+        <rect
+          class="box-fill"
+          x={barX}
+          y={cy[i] - 13}
+          width={r.w}
+          height="26"
+          rx="5"
+        />
+        {ticks(r.w).map((x) => (
+          <line class="fh-tick" x1={x} y1={cy[i] - 10} x2={x} y2={cy[i] + 10} />
+        ))}
+        <rect
+          class={`fh-scan fh-${r.tone} d${i + 1}`}
+          x={barX}
+          y={cy[i] - 13}
+          width={r.w}
+          height="26"
+          rx="5"
+        />
+
+        <g clip-path={`url(#fh-clip${i})`}>
+          <rect
+            class={`fh-sweep fh-${r.tone} s${i + 1}`}
+            x={barX}
+            y={cy[i] - 13}
+            width={sweepW}
+            height="26"
+            style={`--sweep:${r.w - sweepW}px`}
+          />
+        </g>
+      </g>
+    ))
+  }
+
+  <text x="320" y="186" text-anchor="middle" class="t-faint t-label"
+    >same query, more rows to scan each time — every read pays for the whole log</text
+  >
+</svg>
+
+<style>
+  .fh .fh-tick {
+    stroke: var(--rule);
+    stroke-width: 1;
+    opacity: 0.6;
+  }
+  .fh .fh-scan {
+    transform-box: fill-box;
+    transform-origin: left center;
+  }
+  .fh .fh-ok {
+    fill: var(--accent);
+    opacity: 0.16;
+  }
+  .fh .fh-mid {
+    fill: var(--fail);
+    opacity: 0.13;
+  }
+  .fh .fh-fail {
+    fill: var(--fail);
+    opacity: 0.22;
+  }
+  .fh .fh-sweep {
+    transform-box: fill-box;
+    transform-origin: left center;
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .fh .fh-scan {
+      transform: scaleX(0);
+      animation: fh-grow 0.7s cubic-bezier(0.4, 0.1, 0.2, 1) forwards;
+    }
+    .fh .fh-scan.d1 {
+      animation-delay: 0.05s;
+    }
+    .fh .fh-scan.d2 {
+      animation-delay: 0.35s;
+    }
+    .fh .fh-scan.d3 {
+      animation-delay: 0.65s;
+    }
+    /* all three scans start together and sweep at the same px/s,
+       so travel time is proportional to bar length */
+    .fh .fh-sweep.s1 {
+      animation: fh-sweep1 5.6s linear 1.5s infinite;
+    }
+    .fh .fh-sweep.s2 {
+      animation: fh-sweep2 5.6s linear 1.5s infinite;
+    }
+    .fh .fh-sweep.s3 {
+      animation: fh-sweep3 5.6s linear 1.5s infinite;
+    }
+  }
+  @keyframes fh-grow {
+    to {
+      transform: scaleX(1);
+    }
+  }
+  @keyframes fh-sweep1 {
+    0% {
+      transform: translateX(0);
+      opacity: 0;
+    }
+    2% {
+      opacity: 0.55;
+    }
+    5% {
+      opacity: 0.55;
+    }
+    6.6% {
+      transform: translateX(var(--sweep));
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(var(--sweep));
+      opacity: 0;
+    }
+  }
+  @keyframes fh-sweep2 {
+    0% {
+      transform: translateX(0);
+      opacity: 0;
+    }
+    3% {
+      opacity: 0.55;
+    }
+    27% {
+      opacity: 0.55;
+    }
+    30.4% {
+      transform: translateX(var(--sweep));
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(var(--sweep));
+      opacity: 0;
+    }
+  }
+  @keyframes fh-sweep3 {
+    0% {
+      transform: translateX(0);
+      opacity: 0;
+    }
+    3% {
+      opacity: 0.55;
+    }
+    64% {
+      opacity: 0.55;
+    }
+    67.8% {
+      transform: translateX(var(--sweep));
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(var(--sweep));
+      opacity: 0;
+    }
+  }
+</style>

@@ -1,0 +1,400 @@
+---
+title: Counting from a Firehose
+description: >-
+  Serving live dashboards over a write-heavy event stream: the approaches, the
+  tradeoffs, and how to pick.
+pubDate: 2026-07-13
+tags: [systems, analytics, databases]
+draft: false
+---
+
+import Figure from '../../components/Figure.astro';
+import Firehose from '../../components/diagrams/Firehose.astro';
+import Spectrum from '../../components/diagrams/Spectrum.astro';
+import UniquesDontSum from '../../components/diagrams/UniquesDontSum.astro';
+import LateEvent from '../../components/diagrams/LateEvent.astro';
+import DecisionMap from '../../components/diagrams/DecisionMap.astro';
+import Stampede from '../../components/diagrams/Stampede.astro';
+
+Most real-time dashboards start the same way. You wire the dashboard directly to the events table. For a while that works fine: the demo is instant, the numbers are correct, and everyone moves on.
+
+Then the volume grows.
+
+Consider the analytics behind a multi-tenant platform ingesting millions of
+events. Each event carries the dimensions customers slice by — an event type, a
+status, a source — plus a timestamp. The events are typically out of order and sometimes
+duplicated, and each one changes a number on a dashboard someone is watching
+live. Writes
+outnumber reads by 100x, but the reads are what get customers excited. You need
+to absorb that write stream and serve fresh, sliceable aggregates off it at the
+same time, without either side starving the other.
+
+<Figure caption="The naïve dashboard re-runs one COUNT(*) on every read. The query never changes, but as the append-only log grows the scan touches more rows and slows. Every read pays for the whole log.">
+  <Firehose />
+</Figure>
+
+## Why the obvious query fails
+
+Here is the query you start with:
+
+```sql
+-- events(event_id, tenant_id, event_type, status, source, ts)
+SELECT event_type, status, COUNT(*)
+FROM events
+WHERE tenant_id = $1
+GROUP BY event_type, status;
+```
+
+At ten thousand rows it returns instantly. At a hundred million it becomes a
+sequential scan that pins a CPU and drags the whole table through your
+[buffer cache](https://stringintech.github.io/blog/p/postgresql-buffer-cache-a-practical-guide/),
+and because it
+competes with the ingest path for the same CPU and I/O, it slows the writes
+down too. Reading the dashboard degrades the thing the dashboard is measuring.
+
+Indexes help for a while. A composite index on `(tenant_id, event_type, status)` bounds the
+scan, but indexes are a tax on every write, and they only answer the questions
+you indexed for. As soon as someone asks to split that by `source`, you're
+scanning again. The naïve approach doesn't break outright; it degrades
+gradually, usually mid-spike with a customer watching.
+
+The fix is to stop counting the same events over and over. The approaches that
+follow all do that; they differ in when you pay for the aggregation: on the
+write path, on the read path, or ahead of time.
+
+## The spectrum of approaches
+
+There's no single winner, just a spectrum that trades write cost, read latency,
+freshness, and flexibility against each other. It runs from a plain query on the
+raw table at one end to a dedicated streaming platform at the other.
+
+<Figure caption="Seven stops between a single Postgres query and a dedicated streaming platform. Move right only when the volume forces it.">
+  <Spectrum />
+</Figure>
+
+### Query-time aggregation on raw events
+
+Aggregate on read, straight off the raw table, using indexes and maybe
+time-based partitioning so old data falls out of the hot path.
+
+```sql
+-- a time predicate keeps the scan on the hot partition
+SELECT event_type, status, COUNT(*)
+FROM events
+WHERE tenant_id = $1
+  AND ts >= now() - interval '1 hour'
+GROUP BY event_type, status;
+```
+
+- **Pros:** no moving parts, always current, and any question is answerable
+  because you still have every row. It's the most flexible option.
+- **Cons:** read cost scales with data volume, not result size. Every dashboard
+  load does real work, and that work grows over time.
+- **When:** low volume, or queries that are rare and can tolerate a wait. This is
+  a reasonable default until you have evidence you need more.
+
+### Read replicas
+
+Point the dashboards at a replica so analytical reads stop fighting the ingest
+path for the primary's resources. There's no query to change here, just a
+routing decision: dashboards connect to `DATABASE_REPLICA_URL`, ingest keeps the
+primary.
+
+- **Pros:** simple to set up, and it isolates the two workloads so a heavy query
+  can't stall writes.
+- **Cons:** it doesn't make the query cheaper, it just moves it elsewhere. You've
+  bought headroom, and you've added replication lag, so your "real-time" number
+  now trails the primary by however far behind the replica is running.
+- **When:** a stopgap while you build something better, or when read isolation
+  rather than read cost is the real problem.
+
+### Materialized views
+
+Let the database precompute the aggregate and refresh it on a schedule.
+
+```sql
+CREATE MATERIALIZED VIEW status_counts AS
+SELECT tenant_id, event_type, status, COUNT(*) AS n
+FROM events
+GROUP BY tenant_id, event_type, status;
+
+-- CONCURRENTLY requires a unique index on the view
+CREATE UNIQUE INDEX ON status_counts (tenant_id, event_type, status);
+
+-- on a schedule; CONCURRENTLY refreshes without locking out readers
+REFRESH MATERIALIZED VIEW CONCURRENTLY status_counts;
+```
+
+- **Pros:** reads hit a small precomputed table and are fast. In Postgres you get
+  this without much code.
+- **Cons:** a plain `REFRESH` recomputes the whole view and locks out readers
+  unless you use the concurrent variant, and either way you recompute data that
+  didn't change. The numbers are as stale as your refresh interval.
+- **When:** aggregates that a handful of dashboards read constantly, where
+  minute-scale staleness is fine and the underlying volume is moderate.
+
+### Incremental rollup tables
+
+Maintain a summary table keyed by the dimensions you care about and a time
+bucket, `(tenant_id, event_type, status, minute)`, and update it as events arrive, in a
+batch job or a small consumer. A read becomes a lookup of a few dozen rows instead
+of a scan of the whole history.
+
+```sql
+-- $5 is 1 per event, or a micro-batch's pre-summed count
+INSERT INTO rollup (tenant_id, event_type, status, bucket, n)
+VALUES ($1, $2, $3, date_trunc('minute', $4), $5)
+ON CONFLICT (tenant_id, event_type, status, bucket)
+DO UPDATE SET n = rollup.n + EXCLUDED.n;
+```
+
+- **Pros:** reads are cheap and bounded, since cost tracks the number of buckets
+  rather than the number of events. You control the grain, and buckets compose
+  across time scales.
+- **Cons:** you now own the aggregation logic, including idempotency, late data,
+  and backfills (more on those below). And a rollup can only answer the
+  dimensions you chose when you designed it.
+- **When:** high write volume with a known, finite set of questions. Most
+  operational dashboards live here.
+
+### Write-time counters
+
+The extreme version stores the answer itself. Increment a counter, in Postgres
+or Redis, as each event lands, so the read is a single lookup. It sits this far
+along the spectrum not because it's heavy to run — it isn't — but because it
+pushes aggregation as far onto the write path as it goes. You store the final
+answer, not the ingredients.
+
+```sql
+-- key like 'tenant:42:signup:completed'
+INSERT INTO counters (key, n) VALUES ($1, 1)
+ON CONFLICT (key) DO UPDATE SET n = counters.n + 1;   -- each event
+SELECT n FROM counters WHERE key = $1;                -- each read: O(1)
+```
+
+- **Pros:** the fastest reads possible, O(1), with nothing to compute at read
+  time.
+- **Cons:** hard to get right.
+  [At-least-once delivery](https://kafka.apache.org/documentation/#semantics)
+  means the same event can
+  increment the counter twice, and in a store like Redis an acknowledged
+  increment can vanish in a crash. Either way the number is skewed, with no raw
+  data to recompute from. A counter has no memory: once it's wrong, it stays
+  wrong.
+- **When:** a small number of headline metrics ("signups today") where speed
+  matters more than the ability to slice or repair, and always backed by raw
+  events you can rebuild from.
+
+### Purpose-built columnar / OLAP stores
+
+At some point you stop bending your OLTP database into an analytics engine and
+bring in one built for the job: [ClickHouse](https://clickhouse.com) or
+[Druid](https://druid.apache.org). Columnar storage means a query touches only
+the columns it needs and scans them compressed — orders of magnitude less I/O
+than the same query against a row store.
+
+```sql
+-- ClickHouse: columnar storage, no per-dimension index to maintain
+CREATE TABLE events (
+  event_id  UInt64,
+  tenant_id   UInt64,
+  event_type  LowCardinality(String),
+  status      LowCardinality(String),
+  source      LowCardinality(String),
+  ts          DateTime
+) ENGINE = MergeTree ORDER BY (tenant_id, event_type, ts);
+
+-- ad-hoc over any column, still fast: failed signups grouped by source
+SELECT source, count() FROM events
+WHERE tenant_id = 42 AND event_type = 'signup' AND status = 'failed'
+GROUP BY source;
+```
+
+- **Pros:** you get the flexibility of raw queries and the speed of aggregation.
+  Arbitrary filters over large volumes become practical.
+- **Cons:** another system to run, sync, and reason about, usually with its own
+  consistency quirks and a second copy of your data to keep in sync.
+- **When:** high volume and ad-hoc slicing, the combination that breaks
+  rollups. This is the most common reason to move beyond a Postgres-only setup.
+
+### Stream processing
+
+The heaviest option: a log like [Kafka](https://kafka.apache.org) with a
+processor like [Flink](https://flink.apache.org) or
+[Materialize](https://materialize.com) maintaining aggregates continuously as
+events flow through.
+
+```sql
+-- Flink SQL: a 1-minute tumbling window, maintained as events arrive
+SELECT tenant_id, event_type, status, window_start, COUNT(*) AS n
+FROM TABLE(TUMBLE(TABLE events, DESCRIPTOR(ts), INTERVAL '1' MINUTE))
+GROUP BY tenant_id, event_type, status, window_start, window_end;
+```
+
+- **Pros:** low-latency aggregates, first-class handling of late data and
+  windowing, and horizontal scaling past what a single database can do.
+- **Cons:** a substantial platform with real operational weight: exactly-once
+  semantics, state stores, backpressure. This is where the
+  [Lambda-versus-Kappa](https://www.oreilly.com/radar/questioning-the-lambda-architecture/)
+  debates live, and where teams most often over-build.
+- **When:** you've outgrown everything above and sub-second freshness at large
+  scale is a real product requirement.
+
+## The hard parts
+
+Picking a point on the spectrum turns out to be the easy part. The problems that
+consume the most time are cross-cutting: they follow you no matter which approach
+you choose.
+
+### Arbitrary filtering breaks pre-aggregation
+
+A rollup is a bet placed in advance: you assume people will slice by
+`event_type × status`, so that's what you pre-sum. Then a customer asks for failures
+from a particular `source`, and your rollup can't answer, because that
+dimension isn't in the key.
+
+You can pre-aggregate more dimensions, but the bucket count grows
+combinatorially: every added dimension multiplies it, and
+high-cardinality ones like `event_id` or `user_id` make it worse. You can't
+pre-compute your way to true ad-hoc filtering. This is the strongest argument for
+a columnar store, which filters on any column at query time, so you don't have to
+guess which questions people will ask.
+
+### Aggregating over a time period is harder than it looks
+
+"Show me last week" sounds like one query. With buckets it's a rollup of
+rollups: sum minutes into hours and hours into days, then trim the ends where the
+range doesn't line up with your bucket boundaries. Too coarse a bucket and you
+can't zoom in; too fine and the rollup table grows large.
+
+There's also the timezone question. A "daily" number depends on a timezone, and
+if you bucket in UTC while your customer reads the dashboard in local time, their
+Monday and your Monday disagree at the edges. Either commit to a timezone
+approach early or spend time later reconciling numbers that are each individually
+correct and collectively wrong.
+
+### Unique counts do not sum
+
+This one catches most people at least once, often in production. You have unique
+users per minute, precomputed in your rollup. Someone asks for uniques per
+hour, so you sum the minutes. That answer is wrong.
+
+<Figure caption="Counts add, but uniques don't: a user in both buckets gets counted twice.">
+  <UniquesDontSum />
+</Figure>
+
+Uniqueness isn't additive: a user seen in two buckets is one unique user, not
+two, and summing double-counts every overlap. There are two ways to handle it.
+
+- **Exact:** keep the actual set of identifiers per bucket and union them on read.
+  Precise, but the sets grow with your audience and get expensive.
+- **Approximate:** store a
+  [**HyperLogLog**](https://en.wikipedia.org/wiki/HyperLogLog) sketch per bucket —
+  a few kilobytes that estimate cardinality to within a couple of percent and,
+  importantly, merge: unioning two sketches gives the cardinality of the union.
+
+For "unique users this month" across a billion events, a mergeable approximate
+answer beats an exact answer you can't afford to compute. Know which metrics are
+additive and which aren't, and handle them differently from the start.
+
+### Duplicate and late events
+
+Two failure modes with one root cause: the real world doesn't deliver events
+exactly once, in order.
+
+**Duplicates.** Almost every queue and webhook offers at-least-once delivery,
+which means sometimes twice. If your ingest path isn't idempotent, a redelivered
+event inflates the count and the number drifts up. The fix is an
+[idempotency key](https://stripe.com/blog/idempotency): a stable identifier you
+dedupe on before it touches a counter or a rollup. That's what `event_id` is for,
+but it only earns its keep if the producer stamps it once, when the event happens,
+and resends the same value on every retry. An id the receiver mints on arrival is
+a fresh id per delivery, and dedupes nothing.
+
+The tempting mistake is to dedupe on something more natural instead: the thing the
+event describes, or a composite like `(tenant_id, event_type, ts)`. Both drop real
+data, because one logical action legitimately emits several events on its way
+through (created, then completed), and every one after the first looks like a
+duplicate. Dedupe on the event, not on the thing the event is about. Cheap to add
+early, painful to retrofit once your numbers are already suspect.
+
+**Late arrivals.** An event is generated at 09:00 but doesn't reach you until
+09:03, after you've already closed the 09:00 bucket. Now what?
+
+<Figure caption="Out-of-order events land in buckets you already considered final, forcing a tradeoff between freshness and correctness.">
+  <LateEvent />
+</Figure>
+
+Most mature systems answer this the same way: a **grace window** or a
+[**watermark**](https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/#event-time-and-watermarks). You hold a bucket open a little longer, accepting some staleness
+in exchange for catching stragglers before you close it. Anything that arrives
+after the window forces a recompute, gets dropped, or lands in a correction.
+You're trading freshness against correctness either way, so make it a deliberate
+choice.
+
+## So which one do you pick?
+
+Two questions decide most cases: how
+much volume you're aggregating, and how arbitrary the queries that read it are.
+
+<Figure caption="Two axes carry most of the decision; the specific technologies matter less.">
+  <DecisionMap />
+</Figure>
+
+- **Low volume, any query:** query the raw data. Add an index when queries slow
+  down and a replica when reads and writes start competing.
+- **High volume, fixed questions:** rollups and counters. You know the dashboards
+  and the dimensions, and pre-aggregation turns reads into lookups.
+- **High volume, arbitrary questions:** a columnar or OLAP store. This is where
+  most teams justify their first dedicated analytics database.
+- **Massive scale and true real-time:** stream processing, and only once the
+  simpler options have broken.
+
+Start bottom-left, and move up and right only when the current approach has
+stopped working. You'll ship faster and maintain less.
+
+## Presenting it without making a second firehose
+
+Everything above makes an aggregate cheap to read once. A dashboard reads it
+continuously, and it's rarely one dashboard: every open tab is a read
+multiplier, and a single popular dashboard with ten thousand watchers can point a second
+firehose back at your database. The write side you planned for; the read side
+arrives with the customers.
+
+<Figure caption="Every tab on the same poll interval fires on the same tick, stacking reads into spikes past capacity (red); a small per-tab random offset — jitter — spreads the identical load into a flat band under the line (green).">
+  <Stampede />
+</Figure>
+
+### Poll until it hurts
+
+Short-interval polling of a cacheable endpoint is the
+boring default: no connection state, and it degrades gracefully when a tab is
+backgrounded or the network drops. Server-sent events buy you push over a single
+connection when the tick rate outpaces polling, at the cost of holding a
+connection per viewer and losing the cache. Websockets add a write direction that a
+read-only dashboard has no use for. Move down that list only when the
+current step measurably falls short.
+
+### Protect the backend from its own dashboards
+
+Window every query: a live
+view wants "the last hour," a bounded, cache-friendly read, not all of history
+re-summed on every tick. Then cache the rollup endpoint: if the aggregate
+refreshes every ten seconds, ten thousand viewers cost one database read per
+interval, not ten thousand. And jitter the timers, or a fleet of tabs that all
+wake at :00 becomes a synchronized stampede you built yourself.
+
+### Send the answer, not the diff
+
+Streaming deltas so the browser can patch its numbers in place looks efficient,
+but the rollup is already small by construction, a few dozen rows, so return the
+whole thing. Snapshots self-heal: a response that arrives twice or late costs
+nothing, one that arrives out of order is corrected by the next poll, where a
+missed delta corrupts every number after it.
+
+### Fresh has to look honest
+
+Put "as of 09:42:07" next to the number, and decide
+what the customer sees when a late event lands and a closed total steps
+backwards. A number that moves with no explanation reads as a bug. It's the grace-window
+tradeoff again, surfacing in the UI.
