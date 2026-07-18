@@ -1,0 +1,222 @@
+---
+title: How to Accommodate Your Tenants
+description: Where to draw the line in multi-tenant architecture
+pubDate: 2026-07-18
+tags: [multi-tenancy, postgres, saas]
+draft: false
+---
+
+import Figure from '../../components/Figure.astro';
+import TenantHouses from '../../components/diagrams/TenantHouses.astro';
+import Spectrum from '../../components/diagrams/Spectrum.astro';
+
+Multi-tenancy is the default shape of SaaS. Customers share resources, with one rule: no tenant ever sees another tenant's data.
+
+Somewhere in your architecture there is a line between one customer's data and another's, and odds are nobody drew it on purpose. A `tenant_id` column on every table, `WHERE tenant_id = $1` on every query.
+
+The wall between tenants now lives in the `WHERE` clause, which means it lives in the memory of whoever writes the next query.
+
+<Figure caption="The five models, lowest isolation to highest.">
+  <Spectrum
+    left="lowest isolation"
+    right="highest isolation"
+    ariaLabel="The five models on one axis, from lowest isolation to highest: shared rows, row-level security, schema isolation, database isolation, instance isolation."
+    stops={[
+      { name: 'shared rows', side: 'up' },
+      { name: 'RLS', side: 'down' },
+      { name: 'schema', side: 'up' },
+      { name: 'database', side: 'down' },
+      { name: 'instance', side: 'up' },
+    ]}
+  />
+</Figure>
+
+## Who enforces the boundary
+
+Every model below is a different answer to that question. Each step pushes enforcement lower in the stack, to a place where fewer humans can drop it, and each step costs more to run.
+
+One job stays with the application in every model: working out which tenant is calling. The database can enforce a boundary once it knows the tenant, but it cannot know who is on the other end of a connection. Something in your code has to turn each request into a tenant id before the first query runs.
+
+Where that id comes from matters as much as where it goes. A subdomain is yours: you issued it, and DNS resolved it. A claim in a session token was signed by your auth server at login. A tenant id in the request body or a query parameter is just text the client sent, and any tenant can send another tenant's id. So resolve the id once, in middleware at the edge, from a source the caller cannot forge, and hand it down from there. What the app then does with it is where the models differ.
+
+### Shared rows and a `WHERE` clause
+
+Here is the query that keeps tenants apart:
+
+```sql
+SELECT id, amount_cents
+FROM invoice
+WHERE tenant_id = $1;
+```
+
+It stays correct until someone forgets the last line.
+
+```sql
+-- a report that quietly returns every tenant's invoices
+SELECT id, amount_cents
+FROM invoice;
+```
+
+Nothing throws. The page renders, and one customer is looking at another customer's invoices. You find out when they email you.
+
+<Figure caption="Shared rows: the boundary is a WHERE clause.">
+  <TenantHouses model="shared" />
+</Figure>
+
+The same goes beyond `SELECT`. An `UPDATE` without the predicate rewrites rows across tenants, a `DELETE` erases them, an ORM can join its way into a neighbor's data, and a nightly job over "all rows" touches every tenant by definition.
+
+In the application, the tenant id becomes a parameter on every query, and nobody should be typing it by hand. Use the ORM's hook for it, a Rails [`default_scope`](https://api.rubyonrails.org/classes/ActiveRecord/Scoping/Default/ClassMethods.html#method-i-default_scope), an EF Core [global query filter](https://learn.microsoft.com/en-us/ef/core/querying/filters), a Prisma [client extension](https://www.prisma.io/docs/orm/prisma-client/client-extensions), so the predicate is applied in one place instead of remembered at every call site.
+
+### Row-level security
+
+Same table, but now [Postgres enforces `tenant_id` itself](https://www.postgresql.org/docs/current/ddl-rowsecurity.html), on every statement, no matter what the query says.
+
+<Figure caption="Row-level security: the database enforces the boundary.">
+  <TenantHouses model="rls" />
+</Figure>
+
+```sql
+ALTER TABLE invoice ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoice FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON invoice
+  USING (tenant_id = current_setting('app.current_tenant')::bigint);
+```
+
+Your application sets one variable per request and stops writing `WHERE tenant_id` by hand:
+
+```sql
+SET app.current_tenant = '42';
+SELECT id, amount_cents FROM invoice;   -- the policy adds the filter for you
+```
+
+A query that forgets the predicate now returns the tenant's own rows and nothing else.
+
+One trap: a table's owner is exempt from its own policies unless you remembered `FORCE`, and any role with `BYPASSRLS`, superusers included, ignores them regardless. Safest is to let a migration role own the tables and have the app connect as a role that owns nothing:
+
+```sql
+ALTER TABLE invoice OWNER TO migrator;
+
+CREATE ROLE app_user LOGIN;
+GRANT SELECT, INSERT, UPDATE, DELETE ON invoice TO app_user;
+```
+
+The costs: every pooled connection has to carry the right `app.current_tenant`, and a connection returned to the pool with a stale value is a leak of a different shape. The fix belongs in the app layer, binding the id per transaction instead of per connection:
+
+```js
+await db.transaction(async (tx) => {
+  // 'true' scopes the setting to this transaction, so the pool can't carry it onward
+  await tx.query("SELECT set_config('app.current_tenant', $1, true)", [
+    tenantId,
+  ]);
+  // every query in here is filtered by the policy
+});
+```
+
+Beyond that, the policy runs on every row a query touches, and debugging gets harder because results are no longer a plain function of the SQL you wrote. You still share one store, so noisy neighbors and blast radius are unchanged.
+
+### Schema isolation
+
+Give each tenant their own set of tables: one schema per tenant, all in the same database.
+
+<Figure caption="Schema isolation: the boundary is the schema.">
+  <TenantHouses model="schema" />
+</Figure>
+
+```sql
+CREATE SCHEMA tenant_42;
+CREATE TABLE tenant_42.invoice (LIKE template.invoice INCLUDING ALL);
+
+-- point the connection at one tenant's tables
+SET search_path = tenant_42;
+SELECT id, amount_cents FROM invoice;   -- resolves to tenant_42.invoice
+```
+
+[`search_path`](https://www.postgresql.org/docs/current/ddl-schemas.html#DDL-SCHEMAS-PATH) is the Postgres setting that decides which schema a bare table name resolves to. There is no `tenant_id` column anymore; the schema is the tenant. A query that forgets to filter can only see one tenant's tables, so a bad `DELETE` hits one tenant, and `pg_dump --schema=tenant_42` is that tenant's data and nothing else. For the application it is the same move as RLS, one setting bound per transaction, except the setting is `search_path` instead of a policy variable.
+
+The cost shows up in migrations. Each one is the same statement run against N schemas, and you have to track which are done and decide what happens when one fails halfway. Postgres also keeps every table in its system catalog, so at a few thousand schemas the catalog grows heavy and planning slows.
+
+### Database isolation
+
+Give each tenant their own database, with their own copy of everything. The boundary is now the connection itself, backed by a `GRANT`.
+
+<Figure caption="Database isolation: the boundary is a connection.">
+  <TenantHouses model="database" />
+</Figure>
+
+```sql
+CREATE DATABASE tenant_42;
+-- erasure later is one line, not a cascade across forty tables
+DROP DATABASE tenant_42;
+```
+
+This is where the ugly lifecycle jobs get easy. A regulator asking for everything you hold on one tenant gets a single dump. A deletion request is a `DROP DATABASE` instead of a careful cascade. You can back up, restore, and tune one tenant without touching the rest.
+
+In the application, the tenant id now picks the connection itself. A catalog maps tenant to connection string, the app holds a pool per tenant, and a request never touches a pool that is not its own.
+
+You pay in connections and orchestration. Every database needs its own pool, and a thousand tenants is a thousand pools of idle connections, so you usually end up with a proxy like [PgBouncer](https://www.pgbouncer.org/) in front. Migrations fan out across N databases with the same failure-in-the-middle problem as schemas. A query that spans tenants now means opening many connections and stitching results together in your code, and onboarding a tenant waits on provisioning a database first.
+
+### Instance isolation
+
+Give the tenant their own instance: separate hardware, separate network, nothing shared.
+
+<Figure caption="Instance isolation: the boundary is the network.">
+  <TenantHouses model="instance" />
+</Figure>
+
+There is no clever SQL here. Provisioning a tenant is a deploy.
+
+```hcl
+resource "aws_db_instance" "tenant_42" {
+  identifier     = "tenant-42"
+  engine         = "postgres"
+  instance_class = "db.t3.medium"
+  # separate network, separate credentials, separate blast radius
+}
+```
+
+This is the answer when a contract or a regulator demands data residency in a specific region, or a dedicated environment with no neighbors. A noisy tenant cannot touch another's latency because nothing is shared. For the application nothing changes from Database isolation: the catalog entry just points at a different host.
+
+The cost is linear. Every tenant is a full deployment to stand up, patch, monitor, and back up, so your ops load multiplies by your tenant count. A tenant paying a few dollars a month costs about as much to run as one paying thousands.
+
+## The trade-offs
+
+Picking a model means picking which pain you keep.
+
+**Blast radius.** A runaway query, a bad migration, a leaked credential: how far does the damage reach? On the shared store it reaches every tenant at once. In a separate schema, database, or instance, it stops at one.
+
+**Noisy neighbors.** One tenant's Monday-morning spike is everyone else's slow dashboard. Separate schemas still share the instance's CPU and disk; separate databases share less; a separate instance shares nothing, and pays for it.
+
+**Per-tenant operations.** Export one tenant for a regulator. Delete one for good. Restore one to last Tuesday without rolling everyone else back. On a shared store these range from awkward to near-impossible, because the rows are interleaved in the same tables and the same backup. The more isolated the model, the more each collapses into one operation on one object.
+
+**Migration fan-out.** One shared schema is one migration, and it lands everywhere at once. That is convenient until you want to roll out to ten tenants before the other thousand. Schemas and databases let you stage, at the price of orchestrating N runs and reconciling the ones that fail partway.
+
+**Cost.** Idle tenants still occupy space. The long tail of tiny accounts costs pennies in a shared table and a fortune on their own clusters. Every step toward isolation makes each tenant more expensive to keep.
+
+RLS does not get its own row. It changes who enforces the boundary, not what is shared, so it scores the same as plain shared rows on all five.
+
+<div class="table-wrap">
+
+| Model              | Blast radius | Noisy neighbors | Per-tenant ops          | Migrations  | Cost     |
+| ------------------ | ------------ | --------------- | ----------------------- | ----------- | -------- |
+| Shared rows        | all tenants  | shared          | hard                    | one, global | cheapest |
+| Schema isolation   | one tenant   | shared hardware | per-schema dump/restore | N schemas   | low      |
+| Database isolation | one tenant   | mostly isolated | per-DB backup/`DROP`    | N databases | higher   |
+| Instance isolation | one tenant   | fully isolated  | trivial                 | N deploys   | highest  |
+
+</div>
+
+## Where to start
+
+For most products, shared rows. It is the cheapest model to run, one migration lands everywhere, and you will not know your tenant shape until you have tenants. Plenty of companies start here and move tenants up a level once the traffic or the contracts arrive.
+
+Two things push you off the default, in order:
+
+1. **Compliance.** A contractual isolation requirement outranks everything else and usually forces a database or an instance.
+2. **Your team.** Ask whether you can operate N databases at two in the morning. A model you cannot run is worse than a simpler one you can.
+
+What makes that later move cheap or brutal is decided now: keep `tenant_id` clean and enforced from the first day, even while everything is pooled. It is the seam you will cut along when a tenant grows into a whale or signs a contract that forces them onto their own hardware, and it is what lets you run two models at once, with the long tail pooled and a routing layer sending each big tenant to its own database. A clean discriminator turns a re-home into a data move. A messy one turns it into a rewrite.
+
+## Drawing the line
+
+The best isolation is the kind you stop thinking about, because the boundary sits where a person cannot break it. Start with the cheapest model your contracts allow, and keep the seam clean so you can move a tenant when you have to.

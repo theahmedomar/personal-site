@@ -12,6 +12,8 @@ const {
   tags = [],
   readingTime,
   image,
+  prev,
+  next,
 } = Astro.props;
 
 const shareUrl = new URL(Astro.url.pathname, Astro.site).href;
@@ -80,9 +82,24 @@ const articleLd = {
     <SignupForm />
 
     <ShareLinks url={shareUrl} title={title} />
-  </article>
 
-  <Fragment slot="footer">
-    <a href="/writing">← Writing</a>
-  </Fragment>
+    {
+      (prev || next) && (
+        <nav class="post-nav" aria-label="Adjacent posts">
+          {prev && (
+            <a href={prev.href} rel="prev" class="post-nav-link">
+              <span class="post-nav-label">← Previous</span>
+              <span class="post-nav-title">{prev.title}</span>
+            </a>
+          )}
+          {next && (
+            <a href={next.href} rel="next" class="post-nav-link next">
+              <span class="post-nav-label">Next →</span>
+              <span class="post-nav-title">{next.title}</span>
+            </a>
+          )}
+        </nav>
+      )
+    }
+  </article>
 </Base>

@@ -4,24 +4,35 @@ import ArticleLayout from '../../layouts/ArticleLayout.astro';
 import { readingTime } from '../../lib/reading-time';
 
 export async function getStaticPaths() {
-  const articles = await getCollection('articles', ({ data }) =>
-    import.meta.env.PROD ? !data.draft : true,
-  );
-  return articles.map((article) => ({
+  const articles = (
+    await getCollection('articles', ({ data }) =>
+      import.meta.env.PROD ? !data.draft : true,
+    )
+  ).sort((a, b) => a.data.pubDate.valueOf() - b.data.pubDate.valueOf());
+
+  return articles.map((article, i) => ({
     params: { slug: article.id },
-    props: { article },
+    props: {
+      article,
+      prev: articles[i - 1] ?? null,
+      next: articles[i + 1] ?? null,
+    },
   }));
 }
 
-const { article } = Astro.props;
+const { article, prev, next } = Astro.props;
 const { Content } = await render(article);
 const rt = readingTime(article.body ?? '');
+
+const link = (a) => a && { href: `/writing/${a.id}/`, title: a.data.title };
 ---
 
 <ArticleLayout
   {...article.data}
   readingTime={rt}
   image={article.data.ogImage ?? `open-graph/${article.id}.png`}
+  prev={link(prev)}
+  next={link(next)}
 >
   <Content />
 </ArticleLayout>

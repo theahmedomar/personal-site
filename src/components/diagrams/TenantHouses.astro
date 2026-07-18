@@ -1,0 +1,269 @@
+---
+// A small schematic per isolation model, sharing one visual language: tenants
+// A/B/C as tokens, and a "shared enclosure" that recedes as you move down the
+// models — one room, then rooms under one roof, then houses on one lot, then
+// separate lots. `model` selects which one.
+const { model } = Astro.props;
+
+const W = 480;
+const H = 176;
+
+const ALT = {
+  shared: 'one table, dividers drawn in pencil',
+  rls: 'one table, dividers the database locks',
+  schema: 'one database, one roof, a room each',
+  database: 'one instance, one lot, a house each',
+  instance: 'separate lots, nothing shared',
+};
+
+// tenants keep the same letters across every diagram so the eye can track them
+const T = ['A', 'B', 'C'];
+
+// build an element list per model; one render path keeps the styling identical
+function build(m) {
+  const els = [];
+  const houseRoof = 22;
+
+  if (m === 'shared' || m === 'rls') {
+    const bx = 120,
+      by = 70,
+      bw = 240,
+      bh = 88;
+    els.push({ t: 'house', x: bx, y: by, w: bw, h: bh });
+    const xs = [bx + 22, bx + 106, bx + 190];
+    xs.forEach((x, i) => els.push({ t: 'token', x, y: by + 30, label: T[i] }));
+    const soft = m === 'shared';
+    els.push({
+      t: soft ? 'divs' : 'div',
+      x: bx + 84,
+      y1: by + 12,
+      y2: by + bh - 12,
+    });
+    els.push({
+      t: soft ? 'divs' : 'div',
+      x: bx + 168,
+      y1: by + 12,
+      y2: by + bh - 12,
+    });
+    if (m === 'rls')
+      els.push({ t: 'lock', x: bx + bw / 2 - 9, y: by - houseRoof - 20 });
+  }
+
+  if (m === 'schema') {
+    const bx = 108,
+      by = 70,
+      bw = 264,
+      bh = 88;
+    els.push({ t: 'house', x: bx, y: by, w: bw, h: bh });
+    const rw = 76,
+      gap = 8;
+    for (let i = 0; i < 3; i++) {
+      const rx = bx + 12 + i * (rw + gap);
+      els.push({ t: 'room', x: rx, y: by + 12, w: rw, h: bh - 24 });
+      els.push({ t: 'token', x: rx + rw / 2 - 14, y: by + 30, label: T[i] });
+    }
+  }
+
+  if (m === 'database') {
+    els.push({ t: 'lot', x: 74, y: 56, w: 332, h: 108 });
+    const hw = 78,
+      step = 104;
+    for (let i = 0; i < 3; i++) {
+      const hx = 96 + i * step;
+      els.push({ t: 'house', x: hx, y: 92, w: hw, h: 54 });
+      els.push({ t: 'token', x: hx + hw / 2 - 14, y: 106, label: T[i] });
+    }
+  }
+
+  if (m === 'instance') {
+    const lw = 138,
+      step = 152;
+    for (let i = 0; i < 3; i++) {
+      const lx = 22 + i * step;
+      els.push({ t: 'lot', x: lx, y: 52, w: lw, h: 112 });
+      const hx = lx + lw / 2 - 39;
+      els.push({ t: 'house', x: hx, y: 90, w: 78, h: 54 });
+      els.push({ t: 'token', x: hx + 25, y: 104, label: T[i] });
+    }
+  }
+
+  return els.map((e, i) => ({ ...e, i }));
+}
+
+const els = build(model);
+const roofH = 22;
+---
+
+<svg
+  class="diagram th"
+  viewBox={`0 0 ${W} ${H}`}
+  role="img"
+  aria-label={ALT[model] ?? model}
+>
+  {
+    els.map((e) => {
+      if (e.t === 'house') {
+        const apex = `${e.x + e.w / 2},${e.y - roofH}`;
+        return (
+          <g class="th-el" style={`animation-delay:${e.i * 0.05}s`}>
+            <polyline
+              class="th-roof"
+              points={`${e.x - 6},${e.y} ${apex} ${e.x + e.w + 6},${e.y}`}
+            />
+            <rect
+              class="th-body"
+              x={e.x}
+              y={e.y}
+              width={e.w}
+              height={e.h}
+              rx="4"
+            />
+          </g>
+        );
+      }
+      if (e.t === 'room')
+        return (
+          <rect
+            class="th-room th-el"
+            x={e.x}
+            y={e.y}
+            width={e.w}
+            height={e.h}
+            rx="3"
+            style={`animation-delay:${e.i * 0.05}s`}
+          />
+        );
+      if (e.t === 'lot')
+        return (
+          <rect
+            class="th-lot th-el"
+            x={e.x}
+            y={e.y}
+            width={e.w}
+            height={e.h}
+            rx="8"
+            style={`animation-delay:${e.i * 0.05}s`}
+          />
+        );
+      if (e.t === 'div' || e.t === 'divs')
+        return (
+          <line
+            class={e.t === 'divs' ? 'th-div-soft' : 'th-div'}
+            x1={e.x}
+            y1={e.y1}
+            x2={e.x}
+            y2={e.y2}
+          />
+        );
+      if (e.t === 'token')
+        return (
+          <g class="th-el" style={`animation-delay:${e.i * 0.05}s`}>
+            <rect
+              class="th-token"
+              x={e.x}
+              y={e.y}
+              width="28"
+              height="28"
+              rx="6"
+            />
+            <text
+              x={e.x + 14}
+              y={e.y + 19}
+              text-anchor="middle"
+              class="th-tok-t"
+            >
+              {e.label}
+            </text>
+          </g>
+        );
+      if (e.t === 'lock')
+        return (
+          <g class="th-lock th-el" style={`animation-delay:${e.i * 0.05}s`}>
+            <path
+              class="th-shackle"
+              d={`M${e.x + 4},${e.y + 8} v-3 a5,5 0 0 1 10,0 v3`}
+            />
+            <rect
+              x={e.x}
+              y={e.y + 8}
+              width="18"
+              height="13"
+              rx="2.5"
+              class="th-lockbody"
+            />
+          </g>
+        );
+      return null;
+    })
+  }
+</svg>
+
+<style>
+  .diagram.th .th-roof {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+  }
+  .diagram.th .th-body {
+    fill: color-mix(in srgb, var(--accent) 6%, var(--code-bg));
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  .diagram.th .th-room {
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 1.5;
+  }
+  .diagram.th .th-lot {
+    fill: none;
+    stroke: var(--faint);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 5;
+  }
+  .diagram.th .th-div {
+    stroke: var(--muted);
+    stroke-width: 1.5;
+  }
+  .diagram.th .th-div-soft {
+    stroke: var(--faint);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+  }
+  .diagram.th .th-token {
+    fill: color-mix(in srgb, var(--accent) 15%, var(--code-bg));
+    stroke: var(--accent);
+    stroke-width: 1.25;
+  }
+  .diagram.th .th-tok-t {
+    fill: var(--accent-ink);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .diagram.th .th-shackle {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.75;
+  }
+  .diagram.th .th-lockbody {
+    fill: var(--code-bg);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .diagram.th .th-el {
+      opacity: 0;
+      animation: th-in 0.4s ease-out forwards;
+    }
+  }
+  @keyframes th-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>

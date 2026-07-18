@@ -1,31 +1,21 @@
 ---
-// D2 — the seven approaches laid out on one axis by how much machinery you build
-// and operate, from least effort (query raw data) to most (a streaming platform).
+// Stops laid out on one axis, growing along it (dot size tracks position).
 // Labels alternate above and below the line so each has room to breathe.
+// Props: stops [{name, note, side: 'up'|'down'}], left/right end labels, ariaLabel.
+const { stops: rawStops, left, right, ariaLabel } = Astro.props;
+
 const start = 72;
 const end = 560;
-const stops = [
-  { name: 'raw query', note: 'scan every read', side: 'up' },
-  { name: 'read replica', note: 'offload reads', side: 'down' },
-  { name: 'materialized view', note: 'scheduled refresh', side: 'up' },
-  { name: 'rollup table', note: 'precompute on ingest', side: 'down' },
-  { name: 'write-time counter', note: 'store the answer', side: 'up' },
-  { name: 'columnar / OLAP', note: 'ad-hoc at scale', side: 'down' },
-  { name: 'stream processing', note: 'continuous compute', side: 'up' },
-].map((s, i) => ({
+const n = rawStops.length - 1;
+const stops = rawStops.map((s, i) => ({
   ...s,
   i,
-  x: Math.round(start + (i * (end - start)) / 6),
-  r: (3.5 + (i / 6) * 2).toFixed(1),
+  x: Math.round(start + (i * (end - start)) / n),
+  r: (3.5 + (i / n) * 2).toFixed(1),
 }));
 ---
 
-<svg
-  class="diagram"
-  viewBox="0 0 640 210"
-  role="img"
-  aria-label="The seven approaches on one axis, from least effort (query raw data on every read) to most effort (a dedicated streaming platform): raw query, read replica, materialized view, rollup table, write-time counter, columnar or OLAP store, and stream processing."
->
+<svg class="diagram" viewBox="0 0 640 210" role="img" aria-label={ariaLabel}>
   <defs>
     <marker
       id="sp-arrow"
@@ -44,10 +34,8 @@ const stops = [
     </linearGradient>
   </defs>
 
-  <text x="8" y="20" class="t-faint t-note">least effort</text>
-  <text x="632" y="20" text-anchor="end" class="t-faint t-note"
-    >most effort</text
-  >
+  <text x="8" y="20" class="t-faint t-note">{left}</text>
+  <text x="632" y="20" text-anchor="end" class="t-faint t-note">{right}</text>
 
   <line
     x1="56"
@@ -76,14 +64,16 @@ const stops = [
         >
           {s.name}
         </text>
-        <text
-          x={s.x}
-          y={s.side === 'up' ? 94 : 180}
-          text-anchor="middle"
-          class="t-faint t-note"
-        >
-          {s.note}
-        </text>
+        {s.note && (
+          <text
+            x={s.x}
+            y={s.side === 'up' ? 94 : 180}
+            text-anchor="middle"
+            class="t-faint t-note"
+          >
+            {s.note}
+          </text>
+        )}
       </g>
     ))
   }

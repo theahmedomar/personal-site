@@ -4,7 +4,7 @@ description: >-
   Serving live dashboards over a write-heavy event stream: the approaches, the
   tradeoffs, and how to pick.
 pubDate: 2026-07-13
-tags: [systems, analytics, databases]
+tags: [analytics, streaming, databases]
 draft: false
 ---
 
@@ -69,7 +69,20 @@ freshness, and flexibility against each other. It runs from a plain query on the
 raw table at one end to a dedicated streaming platform at the other.
 
 <Figure caption="Seven stops between a single Postgres query and a dedicated streaming platform. Move right only when the volume forces it.">
-  <Spectrum />
+  <Spectrum
+    left="least effort"
+    right="most effort"
+    ariaLabel="The seven approaches on one axis, from least effort (query raw data on every read) to most effort (a dedicated streaming platform): raw query, read replica, materialized view, rollup table, write-time counter, columnar or OLAP store, and stream processing."
+    stops={[
+      { name: 'raw query', note: 'scan every read', side: 'up' },
+      { name: 'read replica', note: 'offload reads', side: 'down' },
+      { name: 'materialized view', note: 'scheduled refresh', side: 'up' },
+      { name: 'rollup table', note: 'precompute on ingest', side: 'down' },
+      { name: 'write-time counter', note: 'store the answer', side: 'up' },
+      { name: 'columnar / OLAP', note: 'ad-hoc at scale', side: 'down' },
+      { name: 'stream processing', note: 'continuous compute', side: 'up' },
+    ]}
+  />
 </Figure>
 
 ### Query-time aggregation on raw events

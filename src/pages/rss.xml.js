@@ -17,6 +17,7 @@ export async function GET(context) {
       description: a.data.description,
       pubDate: a.data.pubDate,
       link: `/writing/${a.id}/`,
+      categories: a.data.tags,
     })),
   });
 }
